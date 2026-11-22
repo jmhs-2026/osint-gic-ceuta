@@ -109,6 +109,11 @@ footer{max-width:980px;margin:0 auto;padding:10px 16px 30px;color:var(--muted);f
 .genp[hidden]{display:none}
 .genp button{border:0;border-radius:10px;padding:13px;background:var(--gold);color:var(--gold-ink);font:700 15px var(--f-body);cursor:pointer}
 .genp button:disabled{opacity:.6}
+.docview{background:#fff;color:#111;border-radius:14px;padding:18px 16px;margin-top:12px;line-height:1.5;overflow-wrap:anywhere;font:15px/1.5 Arial,sans-serif}
+.docview img{max-width:100%;height:auto}.docview p{margin:0 0 .7em}.docview h1,.docview h2,.docview h3{font-size:1.1em}.docview a{color:#1a56c4}.docview table{border-collapse:collapse;max-width:100%}.docview td,.docview th{border:1px solid #bbb;padding:4px 6px}
+.novcard .when{overflow-wrap:anywhere}.novcard{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.genp input{padding:12px;border-radius:10px;border:1px solid var(--line);background:#0a1628;color:var(--ink);font-size:16px}
+.genp small{min-height:1.2em}
 </style>
 </head>
 <body>
@@ -233,12 +238,18 @@ function home(){
   var h='<div class="hello"><h2>Barridos activos</h2><p>Toca un apartado para ver el último informe.</p></div><div class="tiles">';
   SECCIONES.forEach(function(s){
     var o=SEC[s.id], r=o&&o.ultimo;
+    if(s.id==="novedades"){h+='<button class="tile" data-go="novedades"><span class="img"><img src="'+s.img+'" alt="'+esc(s.alt)+'"></span><span class="meta"><small>'+(NOV?'Último informe: '+esc(fmtT(NOV.t)):'Aún sin informes')+'</small></span></button>';return}
     h+='<button class="tile" data-go="'+s.id+'"><span class="img"><img src="'+s.img+'" alt="'+esc(s.alt)+'"></span><span class="meta">'+chip(r&&r.nivel)+'<small>'+(r?'Actualizado '+esc(r.actualizadoTexto||""):'Aún sin informes')+'</small></span></button>';
   });
   $("main").innerHTML=h+'</div>';
 }
 function section(id){
   var s=SECCIONES.filter(function(x){return x.id===id})[0]; if(!s){home();return}
+  if(id==="novedades"){
+    $("main").innerHTML='<div class="bar"><button class="back" data-go="">← Volver</button><button class="gen" data-add="1" aria-label="Añadir informe">＋ Añadir</button></div>'+
+    '<div class="genp" id="admpanel" hidden><b>Añadir informe (solo administrador)</b><input type="password" id="admpass" placeholder="Clave de administrador" autocomplete="off"><input type="file" id="admfile" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><button id="admgo">Subir documento</button><small id="admmsg"></small></div><div id="novbox"></div>';
+    window.scrollTo(0,0);showNov();return;
+  }
   var o=SEC[id], h='<div class="bar"><button class="back" data-go="">← Volver</button>'+(o&&o.ultimo?'<button class="gen" data-gen="1">📄 Generar informe</button>':'')+'</div>';
   if(o&&o.ultimo)h+='<div class="genp" id="genpanel" hidden><b>¿Qué documento quieres generar?</b><button data-doc="'+id+':todos">Resumen de todos los barridos</button><button data-doc="'+id+':ultimo">Resumen del último barrido</button></div>';
   if(!o||!o.ultimo)h+='<p class="empty">Todavía no hay informes publicados en este apartado.</p>';
@@ -372,8 +383,95 @@ document.addEventListener("click",function(e){
   if(b){var q=b.getAttribute("data-doc").split(":");b.disabled=true;genInforme(q[0],q[1]).finally(function(){b.disabled=false;var p=$("genpanel");if(p)p.hidden=true})}
 });
 
+/* ===== Informe-novedad: último Word (cifrado) + "+" de administrador ===== */
+var REPO="jmhs-2026/osint-gic-ceuta", NOV=null;
+async function loadNov(){
+  NOV=null;
+  try{var r=await fetch("novedad.json?t="+Date.now(),{cache:"no-store"});if(r.ok){var j=await r.json();if(j&&j.ct)NOV=j}}catch(e){}
+}
+function fmtT(t){try{return new Date(t).toLocaleString("es-ES",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}catch(e){return ""}}
+async function decNov(n){
+  var ak=await crypto.subtle.decrypt({name:"RSA-OAEP"},KEY,b64(n.ek));
+  var k=await crypto.subtle.importKey("raw",ak,"AES-GCM",false,["decrypt"]);
+  return new Uint8Array(await crypto.subtle.decrypt({name:"AES-GCM",iv:b64(n.iv)},k,b64(n.ct)));
+}
+function loadMammoth(){
+  return new Promise(function(res,rej){
+    if(window.mammoth)return res();
+    var s=document.createElement("script");s.src="mammoth.browser.min.js?v=1";s.onload=res;s.onerror=rej;document.head.appendChild(s);
+  });
+}
+function bytesToB64(u8){var s="",c=0x8000;for(var i=0;i<u8.length;i+=c)s+=String.fromCharCode.apply(null,u8.subarray(i,i+c));return btoa(s)}
+async function showNov(){
+  var box=$("novbox");if(!box)return;
+  if(!NOV){box.innerHTML='<p class="empty">Todavía no hay ningún informe en este apartado.</p>';return}
+  box.innerHTML='<p class="empty">Abriendo documento…</p>';
+  try{
+    var bytes=await decNov(NOV),name=NOV.nombre||"Informe.docx";
+    var h='<div class="card novcard"><p class="when"><span>📄 <b>'+esc(name)+'</b></span><span>Añadido '+esc(fmtT(NOV.t))+'</span></p><button class="gen" id="novdl">⬇ Descargar Word</button></div><div class="docview" id="docview"></div>';
+    box.innerHTML=h;
+    $("novdl").addEventListener("click",function(){saveNovFile(bytes,name)});
+    try{await loadMammoth();var out=await window.mammoth.convertToHtml({arrayBuffer:bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)});$("docview").innerHTML=out.value||'<p class="src">Documento vacío.</p>'}
+    catch(e){$("docview").innerHTML='<p class="src">No se puede mostrar la vista previa; usa «Descargar Word».</p>'}
+  }catch(e){box.innerHTML='<p class="empty">No se pudo abrir el documento.</p>'}
+}
+async function saveNovFile(bytes,name){
+  var blob=new Blob([bytes],{type:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+  try{var dl=window.claude&&await window.claude.use("downloads");if(dl){await dl.save({filename:name,data:blob});return}}catch(e){}
+  try{var f=new File([blob],name,{type:blob.type});if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:name});return}}catch(e){if(e&&e.name==="AbortError")return}
+  var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},4000);
+}
+function admMsg(t,ok){var e=$("admmsg");if(e){e.textContent=t;e.style.color=ok?"#6fdc8c":"#ff8a80"}}
+async function adminToken(pass){
+  var r=await fetch("admin.json?t="+Date.now(),{cache:"no-store"});if(!r.ok)throw new Error("noadmin");
+  var w=await r.json();
+  var base=await crypto.subtle.importKey("raw",new TextEncoder().encode(pass),"PBKDF2",false,["deriveKey"]);
+  var k=await crypto.subtle.deriveKey({name:"PBKDF2",salt:b64(w.salt),iterations:w.iter,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,["decrypt"]);
+  return new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:b64(w.iv)},k,b64(w.ct)));
+}
+async function encryptDoc(bytes,name){
+  var pub=await crypto.subtle.importKey("spki",b64(DATA.pub),{name:"RSA-OAEP",hash:"SHA-256"},false,["encrypt"]);
+  var ak=crypto.getRandomValues(new Uint8Array(32)),iv=crypto.getRandomValues(new Uint8Array(12));
+  var k=await crypto.subtle.importKey("raw",ak,"AES-GCM",false,["encrypt"]);
+  var ct=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv:iv},k,bytes));
+  var ek=new Uint8Array(await crypto.subtle.encrypt({name:"RSA-OAEP"},pub,ak));
+  return {t:new Date().toISOString(),nombre:name,ek:bytesToB64(ek),iv:bytesToB64(iv),ct:bytesToB64(ct)};
+}
+async function ghPut(token,obj){
+  var api="https://api.github.com/repos/"+REPO+"/contents/novedad.json",H={Authorization:"Bearer "+token,Accept:"application/vnd.github+json"};
+  var sha;var g=await fetch(api+"?ref=main",{headers:H,cache:"no-store"});
+  if(g.ok){sha=(await g.json()).sha}else if(g.status!==404)throw new Error("GET "+g.status);
+  var body={message:"Informe-novedad",branch:"main",content:btoa(unescape(encodeURIComponent(JSON.stringify(obj))))};if(sha)body.sha=sha;
+  var p=await fetch(api,{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},H),body:JSON.stringify(body)});
+  if(!p.ok)throw new Error("PUT "+p.status);
+}
+document.addEventListener("click",function(e){
+  var b=e.target.closest("[data-add]");
+  if(b){var p=$("admpanel");if(p)p.hidden=!p.hidden;return}
+  b=e.target.closest("#admgo");
+  if(b){doAdd()}
+});
+async function doAdd(){
+  var pass=$("admpass").value,f=$("admfile").files[0];
+  if(!pass){admMsg("Escribe la clave de administrador.");return}
+  if(!f){admMsg("Elige el documento Word (.docx).");return}
+  if(!/\.docx$/i.test(f.name)){admMsg("Solo se admiten archivos .docx.");return}
+  if(f.size>20*1024*1024){admMsg("El archivo es demasiado grande (máx. 20 MB).");return}
+  $("admgo").disabled=true;admMsg("Comprobando clave…",true);
+  var token;
+  try{token=await adminToken(pass)}catch(e){admMsg("Clave de administrador incorrecta.");$("admgo").disabled=false;return}
+  try{
+    admMsg("Cifrando y subiendo…",true);
+    var bytes=new Uint8Array(await f.arrayBuffer()),obj=await encryptDoc(bytes,f.name);
+    await ghPut(token,obj);
+    NOV=obj;$("admpass").value="";$("admpanel").hidden=true;showNov();
+    admMsg("");
+  }catch(e){admMsg("No se pudo guardar ("+(e&&e.message||"error")+"). Inténtalo de nuevo.")}
+  $("admgo").disabled=false;
+}
+
 function lock(){forget();KEY=null;SEC={};$("app").hidden=true;$("lock").hidden=false;$("code").value="";$("code").type="password";$("eye-on").hidden=false;$("eye-off").hidden=true;$("eye").setAttribute("aria-pressed","false");$("err").textContent=""}
-async function show(raw){await decryptAll(raw);$("lock").hidden=true;$("app").hidden=false;route()}
+async function show(raw){await decryptAll(raw);await loadNov();$("lock").hidden=true;$("app").hidden=false;route()}
 
 async function load(){
   var r=await fetch("data.json?t="+Date.now(),{cache:"no-store"});
