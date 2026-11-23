@@ -471,12 +471,13 @@ async function doAdd(){
 }
 
 function lock(){forget();KEY=null;SEC={};$("app").hidden=true;$("lock").hidden=false;$("code").value="";$("code").type="password";$("eye-on").hidden=false;$("eye-off").hidden=true;$("eye").setAttribute("aria-pressed","false");$("err").textContent=""}
-async function show(raw){await decryptAll(raw);await loadNov();$("lock").hidden=true;$("app").hidden=false;route()}
+var RAW=null,LAST="";
+async function show(raw){RAW=raw;await decryptAll(raw);await loadNov();$("lock").hidden=true;$("app").hidden=false;route()}
 
 async function load(){
   var r=await fetch("data.json?t="+Date.now(),{cache:"no-store"});
   if(!r.ok)throw new Error("No se pudo cargar");
-  DATA=await r.json();
+  var tx=await r.text();DATA=JSON.parse(tx);LAST=tx.length+":"+(DATA.sections?JSON.stringify(Object.keys(DATA.sections).map(function(k){return (DATA.sections[k][0]||{}).t})):"");
 }
 $("f").addEventListener("submit",async function(e){
   e.preventDefault(); var b=$("go"),er=$("err"); er.textContent=""; b.disabled=true; b.textContent="Comprobando…";
@@ -497,6 +498,19 @@ $("eye").addEventListener("click",function(){
   $("eye-on").hidden=show; $("eye-off").hidden=!show; c.focus();
 });
 $("lockbtn").addEventListener("click",lock);
+/* Actualización automática: al volver a la app y cada 2 min comprueba si hay barridos nuevos */
+var BUSY=false;
+async function refresh(){
+  if(BUSY||!KEY||!RAW||$("app").hidden||document.hidden)return; BUSY=true;
+  try{
+    var prev=LAST; await load();
+    if(LAST!==prev){var y=window.scrollY;await decryptAll(RAW);await loadNov();route();window.scrollTo(0,y)}
+  }catch(e){}
+  BUSY=false;
+}
+document.addEventListener("visibilitychange",function(){if(!document.hidden)refresh()});
+window.addEventListener("focus",refresh);
+setInterval(refresh,120000);
 (async function(){
   try{
     if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(function(){});
