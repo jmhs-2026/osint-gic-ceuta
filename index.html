@@ -139,6 +139,7 @@ footer{max-width:980px;margin:0 auto;padding:10px 16px 30px;color:var(--muted);f
 
 <div id="app" hidden>
   <header class="top"><div class="in">
+    <button class="ib" id="bell" aria-label="Activar avisos" hidden>🔔</button>
     <button class="ib" id="lockbtn" aria-label="Bloquear">🔒</button>
   </div></header>
   <main class="wrap" id="main"></main>
@@ -472,7 +473,7 @@ async function doAdd(){
 
 function lock(){forget();KEY=null;SEC={};$("app").hidden=true;$("lock").hidden=false;$("code").value="";$("code").type="password";$("eye-on").hidden=false;$("eye-off").hidden=true;$("eye").setAttribute("aria-pressed","false");$("err").textContent=""}
 var RAW=null,LAST="";
-async function show(raw){RAW=raw;await decryptAll(raw);await loadNov();$("lock").hidden=true;$("app").hidden=false;route()}
+async function show(raw){RAW=raw;await decryptAll(raw);await loadNov();$("lock").hidden=true;$("app").hidden=false;route();pushState()}
 
 async function load(){
   var r=await fetch("data.json?t="+Date.now(),{cache:"no-store"});
@@ -497,6 +498,30 @@ $("eye").addEventListener("click",function(){
   this.setAttribute("aria-pressed",show?"true":"false"); this.setAttribute("aria-label",show?"Ocultar código":"Mostrar código");
   $("eye-on").hidden=show; $("eye-off").hidden=!show; c.focus();
 });
+/* Avisos push: solo texto genérico, sin contenido de los informes */
+var PUSH_URL="__PUSH_URL__";
+function b64u(s){s=s.replace(/-/g,"+").replace(/_/g,"/");var r=atob(s+"===".slice((s.length+3)%4)),a=new Uint8Array(r.length);for(var i=0;i<r.length;i++)a[i]=r.charCodeAt(i);return a}
+async function pushState(){
+  var b=$("bell"); if(!("serviceWorker" in navigator)||!("PushManager" in window)||!("Notification" in window)||PUSH_URL.indexOf("__")===0){b.hidden=true;return}
+  b.hidden=false;
+  try{var reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();
+    var on=!!sub&&Notification.permission==="granted";b.textContent=on?"🔔":"🔕";b.setAttribute("aria-label",on?"Avisos activados":"Activar avisos");b.dataset.on=on?"1":"";
+    if(on)fetch(PUSH_URL+"/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(sub)}).catch(function(){});
+  }catch(e){}
+}
+$("bell").addEventListener("click",async function(){
+  try{
+    var reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();
+    if(this.dataset.on){ if(sub){await fetch(PUSH_URL+"/unsubscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({endpoint:sub.endpoint})}).catch(function(){});await sub.unsubscribe()} alert("Avisos desactivados en este dispositivo."); return pushState()}
+    var p=await Notification.requestPermission();
+    if(p!=="granted"){alert("Los avisos están bloqueados. Actívalos en Ajustes del móvil > Notificaciones > OSINT.");return}
+    var k=(await (await fetch(PUSH_URL+"/key")).json()).key;
+    sub=sub||await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64u(k)});
+    await fetch(PUSH_URL+"/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(sub)});
+    alert("Avisos activados en este dispositivo.");pushState();
+  }catch(e){alert("No se pudieron activar los avisos. En iPhone la app debe estar añadida a la pantalla de inicio.")}
+});
+
 $("lockbtn").addEventListener("click",lock);
 /* Actualización automática: al volver a la app y cada 2 min comprueba si hay barridos nuevos */
 var BUSY=false;
