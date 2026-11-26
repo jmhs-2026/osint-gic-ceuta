@@ -499,7 +499,7 @@ $("eye").addEventListener("click",function(){
   $("eye-on").hidden=show; $("eye-off").hidden=!show; c.focus();
 });
 /* Avisos push: solo texto genérico, sin contenido de los informes */
-var PUSH_URL="__PUSH_URL__";
+var PUSH_URL="https://osint-avisos.josem-herediasanchez.workers.dev";
 function b64u(s){s=s.replace(/-/g,"+").replace(/_/g,"/");var r=atob(s+"===".slice((s.length+3)%4)),a=new Uint8Array(r.length);for(var i=0;i<r.length;i++)a[i]=r.charCodeAt(i);return a}
 async function pushState(){
   var b=$("bell"); if(!("serviceWorker" in navigator)||!("PushManager" in window)||!("Notification" in window)||PUSH_URL.indexOf("__")===0){b.hidden=true;return}
