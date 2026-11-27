@@ -520,7 +520,7 @@ $("bell").addEventListener("click",async function(){
     sub=sub||await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64u(k)});
     await fetch(PUSH_URL+"/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(sub)});
     alert("Avisos activados en este dispositivo.");pushState();
-  }catch(e){alert("No se pudieron activar los avisos. En iPhone la app debe estar añadida a la pantalla de inicio.")}
+  }catch(e){alert("No se pudieron activar los avisos.\nMotivo: "+(e&&e.name?e.name:"")+" "+(e&&e.message?e.message:"")+"\nPermiso: "+(window.Notification?Notification.permission:"n/d")+"\nEn iPhone la app debe estar añadida a la pantalla de inicio.")}
 });
 
 $("lockbtn").addEventListener("click",lock);
